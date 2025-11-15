@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Agendamento Global</title>
+
+  <style>
+    body{font-family:Arial;margin:0;padding:0;background:#f2f2f2;}
+    .wrap{display:flex;flex-direction:column;max-width:900px;margin:40px auto;gap:20px;padding:0 12px;}
+    .box{display:flex;gap:20px;}
+    .form, .lista{background:#fff;padding:20px;border-radius:6px;flex:1;}
+    @media(min-width:900px){ .box{flex-direction:row;} }
+    input, button, label{width:100%;padding:10px;margin:6px 0;box-sizing:border-box;}
+    label{font-weight:600;margin-top:8px;}
+    .item{border:1px solid #ddd;padding:8px;margin:8px 0;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}
+    .item span{display:block;}
+    .cancel{background:#e74c3c;color:#fff;border:none;padding:6px 10px;cursor:pointer;border-radius:4px;}
+    .small{font-size:0.9rem;color:#555;}
+    .error{color:#b00020;font-weight:700;margin-top:6px;}
+  </style>
+
+  <!-- Firebase compat SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+
+<body>
+  <div class="wrap">
+    <h1 style="text-align:center">Agendamento Global</h1>
+
+    <div class="box">
+      <div class="form">
+        <h2>Novo agendamento</h2>
+
+        <label for="nome">Seu nome</label>
+        <input id="nome" placeholder="Seu nome" autocomplete="name">
+
+        <label for="equip">Equipamento</label>
+        <input id="equip" placeholder="Nome do equipamento" autocomplete="off">
+
+        <label for="tempo">Tempo de uso (opcional)</label>
+        <input id="tempo" placeholder="Ex: 2h ou 30min">
+
+        <label for="data">Data final do agendamento (obrigatório)</label>
+        <input id="data" type="date" placeholder="YYYY-MM-DD">
+
+        <div id="erro" class="error" style="display:none"></div>
+
+        <button onclick="salvar()">Criar agendamento</button>
+      </div>
+
+      <div class="lista">
+        <h2>Agendamentos</h2>
+        <div id="listagem">Carregando…</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ===== CONFIG DO FIREBASE =====
+    const firebaseConfig = {
+      apiKey: "AIzaSyCd5eVLTG5_3_2lI61AB-gcbuz4wjmZCZY",
+      authDomain: "teste192-9b4e9.firebaseapp.com",
+      databaseURL: "https://teste192-9b4e9-default-rtdb.firebaseio.com",
+      projectId: "teste192-9b4e9",
+      storageBucket: "teste192-9b4e9.firebasestorage.app",
+      messagingSenderId: "1063522852340",
+      appId: "1:1063522852340:web:d0144ce6c187f289f6eda1",
+      measurementId: "G-2K0W4KF291"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const agendRef = db.ref('agendamentos');
+
+    // ===== UTIL =====
+    function mostrarErro(msg){
+      const el = document.getElementById('erro');
+      if(!msg){ el.style.display = 'none'; el.textContent = ''; return; }
+      el.style.display = 'block';
+      el.textContent = msg;
+    }
+
+    function isValidDateStringYYYYMMDD(s){
+      if(!s || typeof s !== 'string') return false;
+      // basic regex then construct Date
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+      const d = new Date(s + 'T00:00:00'); // force midnight UTC-local
+      return !isNaN(d.getTime());
+    }
+
+    function todayYYYYMMDD(){
+      const now = new Date();
+      // create date-only in local timezone
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth()+1).padStart(2,'0');
+      const dd = String(now.getDate()).padStart(2,'0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    // ===== SALVAR AGENDAMENTO (validação forte) =====
+    function salvar(){
+      mostrarErro(null);
+      const n = document.getElementById('nome').value.trim();
+      const e = document.getElementById('equip').value.trim();
+      const t = document.getElementById('tempo').value.trim();
+      const d = document.getElementById('data').value;
+
+      if(!n) { mostrarErro('Informe seu nome.'); return; }
+      if(!e) { mostrarErro('Informe o equipamento.'); return; }
+      if(!d) { mostrarErro('Informe a data do agendamento (obrigatório).'); return; }
+      if(!isValidDateStringYYYYMMDD(d)){ mostrarErro('Formato de data inválido. Use o campo de data.'); return; }
+
+      // opcional: impedir datas já passadas na criação
+      const hoje = todayYYYYMMDD();
+      if (d < hoje) { mostrarErro('A data não pode ser anterior a hoje.'); return; }
+
+      // salve o objeto com createdAt e expiry (data final)
+      const item = {
+        nome: n,
+        equip: e,
+        tempo: t || null,
+        data: d,
+        createdAt: new Date().toISOString()
+      };
+
+      agendRef.push(item)
+        .then(()=> {
+          // limpa campos
+          document.getElementById('nome').value = '';
+          document.getElementById('equip').value = '';
+          document.getElementById('tempo').value = '';
+          document.getElementById('data').value = '';
+          mostrarErro(null);
+        })
+        .catch(err => {
+          console.error('Erro ao salvar:', err);
+          mostrarErro('Erro ao salvar. Verifique regras do Firebase ou console.');
+        });
+    }
+
+    // ===== CANCELAR (senha) =====
+    function cancelar(id){
+      const senha = prompt('Digite a senha para cancelar:');
+      if(senha !== 'engenhariaexata') return alert('Senha incorreta.');
+      agendRef.child(id).remove().catch(e=>{
+        console.error('Erro ao remover:', e);
+        alert('Não foi possível remover (verifique regras).');
+      });
+    }
+
+    // ===== REMOVER VENCIDOS: usa comparação segura com Date =====
+    function removerVencidos(dados){
+      const hojeYYYY = todayYYYYMMDD();
+
+      Object.keys(dados || {}).forEach(id => {
+        const rec = dados[id];
+        const d = rec && rec.data;
+        // se não tiver data válida, NÃO apaga
+        if(!isValidDateStringYYYYMMDD(d)) return;
+
+        // Apaga somente se a data final for anterior a hoje
+        if(d < hojeYYYY){
+          // remove e captura possível erro
+          agendRef.child(id).remove().catch(err => {
+            console.warn('Falha ao remover vencido', id, err);
+          });
+        }
+      });
+    }
+
+    // ===== RENDERIZAÇÃO =====
+    function renderLista(dados){
+      const keys = Object.keys(dados || {});
+      if(keys.length === 0){
+        document.getElementById('listagem').innerHTML = 'Nenhum agendamento.';
+        return;
+      }
+
+      // ordena por data crescente
+      keys.sort((a,b) => {
+        const da = (dados[a] && dados[a].data) || '9999-12-31';
+        const dbb = (dados[b] && dados[b].data) || '9999-12-31';
+        return da < dbb ? -1 : da > dbb ? 1 : 0;
+      });
+
+      const html = keys.map(id=>{
+        const a = dados[id];
+        const tempoTxt = a.tempo ? `<div class="small">Tempo: ${a.tempo}</div>` : '';
+        const created = a.createdAt ? `<div class="small">Criado: ${new Date(a.createdAt).toLocaleString()}</div>` : '';
+        return `
+          <div class="item" id="item-${id}">
+            <span>
+              <strong>${escapeHtml(a.nome)}</strong> — ${escapeHtml(a.equip)}<br>
+              <b>Data final:</b> ${escapeHtml(a.data)}${tempoTxt}${created}
+            </span>
+            <div>
+              <button class="cancel" onclick="cancelar('${id}')">Cancelar</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+      document.getElementById('listagem').innerHTML = html;
+    }
+
+    // small helper to avoid injection via innerHTML
+    function escapeHtml(s){
+      if(!s) return '';
+      return String(s)
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;')
+        .replace(/'/g,'&#39;');
+    }
+
+    // ===== OBSERVADOR FIREBASE (em tempo real) =====
+    agendRef.on('value', snap => {
+      const dados = snap.val() || {};
+      // primeiro remove vencidos (não apaga registros sem data válida)
+      removerVencidos(dados);
+      // renderiza (após remoções a lista será atualizada no próximo evento)
+      renderLista(dados);
+    });
+
+    // opcional: limpeza periódica no cliente a cada X minutos
+    setInterval(() => {
+      agendRef.once('value').then(snap => {
+        removerVencidos(snap.val() || {});
+      }).catch(()=>{});
+    }, 1000 * 60 * 30); // a cada 30 minutos
+  </script>
+</body>
+</html>
